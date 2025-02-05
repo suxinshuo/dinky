@@ -26,6 +26,8 @@ import org.dinky.data.dto.StudioDDLDTO;
 import org.dinky.data.dto.StudioLineageDTO;
 import org.dinky.data.dto.StudioMetaStoreDTO;
 import org.dinky.data.dto.TaskDTO;
+import org.dinky.data.enums.Status;
+import org.dinky.data.exception.BusException;
 import org.dinky.data.model.Catalog;
 import org.dinky.data.model.ClusterInstance;
 import org.dinky.data.model.Column;
@@ -209,6 +211,22 @@ public class StudioServiceImpl implements StudioService {
                     FlinkTableMetadataUtil.getColumnList(customTableEnvironment, catalogName, database, tableName));
         }
         return columns;
+    }
+
+    @Override
+    public boolean dropMSTable(StudioMetaStoreDTO studioMetaStoreDTO) {
+        String catalogName = studioMetaStoreDTO.getCatalog();
+        String database = studioMetaStoreDTO.getDatabase();
+        String tableName = studioMetaStoreDTO.getTable();
+        if (Dialect.isCommonSql(studioMetaStoreDTO.getDialect())) {
+            throw new BusException(Status.SYS_CATALOG_ONLY_SUPPORT_FLINK_SQL_OPERATION);
+        } else {
+            String envSql = taskService.buildEnvSql(studioMetaStoreDTO);
+            JobManager jobManager = getJobManager(studioMetaStoreDTO, envSql);
+            CustomTableEnvironment customTableEnvironment =
+                    jobManager.getExecutor().getCustomTableEnvironment();
+            return FlinkTableMetadataUtil.dropTable(customTableEnvironment, catalogName, database, tableName);
+        }
     }
 
     private JobManager getJobManager(StudioMetaStoreDTO studioMetaStoreDTO, String envSql) {
