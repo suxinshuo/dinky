@@ -69,7 +69,7 @@ jobs:
             ${{ runner.os }}-node-
       - name: Install Dependencies
         if: steps.filter.outputs.frontend == 'true'
-        run: cd dinky-web && npm install -g pnpm && pnpm install --only=dev --prefer-offline
+        run: cd dinky-web && npm install -g pnpm && pnpm install --prefer-offline
       - name: Run frontend format
         if:  steps.filter.outputs.frontend == 'true'
         run: cd dinky-web && npm run lint:prettier
