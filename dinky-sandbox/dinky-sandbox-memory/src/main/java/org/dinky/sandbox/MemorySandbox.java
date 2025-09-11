@@ -19,11 +19,13 @@
 
 package org.dinky.sandbox;
 
+import org.dinky.assertion.Asserts;
 import org.dinky.data.exception.DinkyException;
 import org.dinky.sandbox.metadata.ColumnInfo;
 import org.dinky.sandbox.metadata.TableId;
 import org.dinky.sandbox.metadata.TableInfo;
 import org.dinky.sandbox.metadata.TableType;
+import org.dinky.sandbox.metadata.Tuple;
 
 import org.apache.flink.table.catalog.Column;
 import org.apache.flink.types.Row;
@@ -38,9 +40,9 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
-
-import cn.hutool.core.lang.Tuple;
+import java.util.stream.Collectors;
 
 public class MemorySandbox extends AbstractSandbox implements Sandbox {
 
@@ -51,7 +53,7 @@ public class MemorySandbox extends AbstractSandbox implements Sandbox {
 
     @Override
     public String getType() {
-        return "MemorySandbox";
+        return "memory";
     }
 
     public TableInfo registerTable(
@@ -61,7 +63,7 @@ public class MemorySandbox extends AbstractSandbox implements Sandbox {
             TABLE_CACHE.put(identifier, TableInfo.of(tableId, tableType));
         }
         if (!DATA_CACHE.containsKey(identifier)) {
-            DATA_CACHE.put(identifier, new ArrayList<>());
+            DATA_CACHE.put(identifier, new CopyOnWriteArrayList<>());
         }
         TableInfo tableInfo = TABLE_CACHE.get(identifier);
         if (TableType.CHANGE_LOG.equals(tableType)) {
@@ -72,6 +74,7 @@ public class MemorySandbox extends AbstractSandbox implements Sandbox {
             boolean isPrimaryKey = Arrays.stream(primaryKeyIndexes).anyMatch(x -> x == finalI);
             tableInfo.getColumns().add(ColumnInfo.buildByFlinkColumn(columns.get(i), isPrimaryKey));
         }
+
         return tableInfo;
     }
 
@@ -79,10 +82,13 @@ public class MemorySandbox extends AbstractSandbox implements Sandbox {
     public TableInfo registerTable(TableId tableId, TableType tableType, List<ColumnInfo> columns) {
         String identifier = tableId.identifier();
         if (!TABLE_CACHE.containsKey(identifier)) {
+            if (TableType.CHANGE_LOG.equals(tableType)) {
+                columns.add(0, ColumnInfo.withString("__op__"));
+            }
             TABLE_CACHE.put(identifier, TableInfo.of(tableId, tableType, columns));
         }
         if (!DATA_CACHE.containsKey(identifier)) {
-            DATA_CACHE.put(identifier, new ArrayList<>());
+            DATA_CACHE.put(identifier, new CopyOnWriteArrayList<>());
         }
         return TABLE_CACHE.get(identifier);
     }
@@ -110,29 +116,38 @@ public class MemorySandbox extends AbstractSandbox implements Sandbox {
         return (new ArrayList<>(TABLE_CACHE.values()));
     }
 
+    @Override
+    public List<TableInfo> getAllTables(String boxName) {
+        if (Asserts.isNotNullString(boxName)) {
+            return TABLE_CACHE.values().stream()
+                    .filter(tableInfo -> tableInfo.getTableId().getBoxName().equals(boxName))
+                    .collect(Collectors.toList());
+        }
+        return (new ArrayList<>(TABLE_CACHE.values()));
+    }
+
     public List<Tuple> getData(TableId tableId) {
         String identifier = tableId.identifier();
-        if (!DATA_CACHE.containsKey(identifier)) {
-            return new ArrayList<>();
+        if (DATA_CACHE.containsKey(identifier)) {
+            return DATA_CACHE.get(identifier);
         }
-        return DATA_CACHE.get(identifier);
+        return new ArrayList<>();
     }
 
     @Override
-    public void appendOrUpsertData(TableId tableId, Row row, String timeZone) {
+    public void writeRowData(TableId tableId, Row row, String timeZone) {
         String identifier = tableId.identifier();
         if (!TABLE_CACHE.containsKey(identifier)) {
             throw new DinkyException("Table not found: " + identifier);
         }
         if (!DATA_CACHE.containsKey(identifier)) {
-            DATA_CACHE.put(identifier, new ArrayList<>());
+            DATA_CACHE.put(identifier, new CopyOnWriteArrayList<>());
         }
         TableInfo tableInfo = TABLE_CACHE.get(identifier);
-        Tuple tuple = getStreamTuple(row, timeZone, tableInfo.getType().isAppendRowKind());
-        if (tableInfo.getType().isAppendOnly()) {
+        Tuple tuple = getStreamTuple(row, timeZone, tableInfo.getTableType().isAppendRowKind());
+        if (tableInfo.getTableType().isAppendOnly()) {
             DATA_CACHE.get(identifier).add(tuple);
         } else {
-            // TODO: Update according to the primary key.
             if (RowKind.UPDATE_BEFORE.equals(row.getKind()) || RowKind.DELETE.equals(row.getKind())) {
                 DATA_CACHE.get(identifier).remove(tuple);
             } else {
@@ -148,14 +163,14 @@ public class MemorySandbox extends AbstractSandbox implements Sandbox {
             throw new DinkyException("Table not found: " + identifier);
         }
         if (!DATA_CACHE.containsKey(identifier)) {
-            DATA_CACHE.put(identifier, new ArrayList<>());
+            DATA_CACHE.put(identifier, new CopyOnWriteArrayList<>());
         }
         DATA_CACHE.get(identifier).addAll(tuples);
     }
 
     public void handleFinished(String name, Consumer<String> consumer) {
         consumer.accept(name);
-        dropTable(TableId.parse(name));
+        dropTable(TableId.withPrivate(name));
     }
 
     @Override
