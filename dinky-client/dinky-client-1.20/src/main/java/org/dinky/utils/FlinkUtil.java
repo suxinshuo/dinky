@@ -21,6 +21,8 @@ package org.dinky.utils;
 
 import org.apache.flink.api.common.JobID;
 import org.apache.flink.client.program.ClusterClient;
+import org.apache.flink.configuration.Configuration;
+import org.apache.flink.configuration.HighAvailabilityOptions;
 import org.apache.flink.core.execution.SavepointFormatType;
 import org.apache.flink.table.api.TableResult;
 import org.apache.flink.table.catalog.CatalogManager;
@@ -32,6 +34,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
+
+import cn.hutool.core.convert.Convert;
 
 /**
  * FlinkUtil
@@ -85,5 +89,12 @@ public class FlinkUtil {
                 .cancelWithSavepoint(JobID.fromHexString(jobId), savePoint, SavepointFormatType.DEFAULT)
                 .get()
                 .toString();
+    }
+
+    public static int getZookeeperSessionTimeout(Configuration configuration) {
+        return Convert.toInt(configuration
+                        .get(HighAvailabilityOptions.ZOOKEEPER_SESSION_TIMEOUT)
+                        .getSeconds()
+                * 1000);
     }
 }
