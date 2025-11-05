@@ -23,6 +23,7 @@ import org.dinky.assertion.Asserts;
 import org.dinky.cdc.AbstractSinkBuilder;
 import org.dinky.cdc.convert.DataTypeConverter;
 import org.dinky.cdc.utils.FlinkStatementUtil;
+import org.dinky.data.flink.table.FlinkTableObjectIdentifier;
 import org.dinky.data.model.Column;
 import org.dinky.data.model.FlinkCDCConfig;
 import org.dinky.data.model.Schema;
@@ -53,6 +54,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+
+import cn.hutool.core.util.StrUtil;
 
 public abstract class AbstractSqlSinkBuilder extends AbstractSinkBuilder implements Serializable {
 
@@ -220,19 +223,20 @@ public abstract class AbstractSqlSinkBuilder extends AbstractSinkBuilder impleme
      * @return view name
      */
     public static String replaceViewNameMiddleLineToUnderLine(String viewName) {
-        if (!viewName.isEmpty() && viewName.contains("-")) {
+        if (StrUtil.isNotBlank(viewName) && viewName.contains("-")) {
             logger.warn("the view name [{}] contains '-', replace '-' to '_' for flink use view name", viewName);
             return viewName.replaceAll("-", "_");
         }
         return viewName;
     }
 
-    protected List<Operation> createInsertOperations(Table table, String viewName, String tableName) {
-        String cdcSqlInsert = FlinkStatementUtil.getCDCInsertSql(table, tableName, viewName, config);
+    protected List<Operation> createInsertOperations(
+            Table table, FlinkTableObjectIdentifier sourceTable, FlinkTableObjectIdentifier targetTable) {
+        String cdcSqlInsert = FlinkStatementUtil.getCDCInsertSql(table, targetTable, sourceTable, config);
         logger.info(cdcSqlInsert);
 
         List<Operation> operations = customTableEnvironment.getParser().parse(cdcSqlInsert);
-        logger.info("Create {} FlinkSQL insert into successful...", tableName);
+        logger.info("Create {} FlinkSQL insert into successful...", targetTable);
         if (operations.isEmpty()) {
             return operations;
         }
